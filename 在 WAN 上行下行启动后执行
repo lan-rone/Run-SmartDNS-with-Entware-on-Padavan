@@ -1,0 +1,54 @@
+#!/bin/sh
+
+until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+if pidof smartdns; then
+logger "正在更新smartdns过滤广告规则"
+/opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf -O /opt/etc/smartdns/anti-ad-smartdns-new.conf --no-check-certificate && { logger "下载广告过滤规则成功";killall smartdns; } || { logger "下载广告过滤规则失败"; exit 0; }
+cat >/opt/etc/smartdns/smartdns-new.conf <<"EOF"
+user nobody
+server-name smartdns
+restart-on-crash yes
+log-level notice
+log-size 128K
+log-num 2
+bind [::]:60053
+audit-enable yes
+audit-size 128K
+audit-num 2
+force-qtype-SOA 65
+#@@@@@@@@@@@
+#@@@@@@@@@@@
+server-https https://223.5.5.5/dns-query
+server-https https://223.6.6.6/dns-query
+server-https https://1.12.12.12/dns-query
+server-https https://120.53.53.53/dns-query
+server-https https://doh.360.cn/dns-query
+server-https https://1.0.0.1/dns-query
+server-https https://dns64.dns.google/dns-query
+server-https https://doh-pure.onedns.net/dns-query
+#@@@@@@@@@@@
+#@@@@@@@@@@@
+conf-file /opt/etc/smartdns/anti-ad-smartdns-new.conf
+EOF
+pidof smartdns || /opt/sbin/smartdns -c "/opt/etc/smartdns/smartdns-new.conf" &
+pidof smartdns && { logger "smartdns已加载更新的过滤广告规则"; cp /opt/etc/smartdns/anti-ad-smartdns-new.conf /opt/etc/smartdns/anti-ad-smartdns.conf; rm /opt/etc/smartdns/anti-ad-smartdns-new.conf; } || { logger "smartdns加载更新的过滤广告规则失败"; logger "smartdns尝试以旧配置文件重启进程"; }
+killall smartdns
+/opt/sbin/smartdns &
+fi
+restart_dhcpd
+sleep 2s
+if pidof smartdns; then
+  cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf
+  sed -i '/cache-size=/d' /opt/etc/dnsmasq.conf
+  cat >>/opt/etc/dnsmasq.conf <<"EOF"
+no-resolv
+no-hosts
+cache-size=0
+query-port=65353
+server=127.0.0.1#60053
+EOF
+  killall dnsmasq
+  dnsmasq -C /opt/etc/dnsmasq.conf
+else
+  logger "smartdns进程异常,dnsmasq以默认参数运行中"
+fi

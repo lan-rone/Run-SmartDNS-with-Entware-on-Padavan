@@ -35,7 +35,7 @@ pidof smartdns && { logger "smartdns已加载更新的过滤广告规则"; cp /o
 killall smartdns
 /opt/sbin/smartdns &
 fi
-restart_dhcpd
+pidof smartdns && { restart_dhcpd; } || { logger "加载广告过滤规则失败"; exit 0; }
 sleep 2s
 if pidof smartdns; then
   cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf

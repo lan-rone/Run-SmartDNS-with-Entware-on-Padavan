@@ -23,7 +23,7 @@ server-https https://doh.360.cn/dns-query
 server-https https://1.0.0.1/dns-query
 server-https https://dns64.dns.google/dns-query
 server-https https://doh-pure.onedns.net/dns-query
-conf-file /opt/etc/smartdns/anti-ad-smartdns.conf
+conf-file /opt/etc/smartdns/anti-ad-smartdns-new.conf
 EOF
 
 # 检测 SmartDNS 进程并更新规则

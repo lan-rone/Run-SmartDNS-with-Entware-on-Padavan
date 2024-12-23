@@ -119,7 +119,139 @@ else
 fi
 ```
 3. 将“在 WAN 上行下行启动后执行”里面的脚本复制并粘贴到Padavan-参数设置-脚本-在 WAN 上行下行启动后执行（文本框里）。  
+```sh
+#!/bin/sh
+
+### Custom user script
+### Called after internal WAN up/down action
+### $1 - WAN action (up/down)
+### $2 - WAN interface name (e.g. eth3 or ppp0)
+### $3 - WAN IPv4 address
+
+# 获取脚本的执行程序路径和参数
+script_name=$0
+script_params="$@"
+logger "在 WAN 上行/下行启动后执行:"
+logger "脚本启动: $script_name，参数: $script_params"
+
+# 获取传入的两个参数
+action=$1
+interface=$2
+
+# 判断传入的参数是否符合条件
+if [ "$action" = "up" ] && [ "$interface" = "ppp0" ]; then
+    # 使用ping命令检测网络连接状态
+    if ! ping -c 10 223.5.5.5 >/dev/null 2>&1; then
+        # 如果网络不通，执行重连命令
+        logger "Network is down. Restarting WAN..."
+        restart_wan
+    else
+        logger "Network is up. No need to restart WAN."
+        
+        # 使用 until 循环等待网络恢复
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do
+            sleep 1
+        done
+
+        # 重启 DHCPD
+        restart_dhcpd
+        
+        # 如果 SmartDNS 进程存在，更新 DNS 配置
+        if pidof smartdns >/dev/null 2>&1; then
+            cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf
+            sed -i '/cache-size=/d' /opt/etc/dnsmasq.conf
+            cat >>/opt/etc/dnsmasq.conf <<"EOF"
+no-resolv
+no-hosts
+cache-size=0
+query-port=65353
+server=127.0.0.1#60053
+EOF
+            killall dnsmasq
+            dnsmasq -C /opt/etc/dnsmasq.conf
+        else
+            logger "dnsmasq以默认参数运行中"
+        fi
+    fi
+fi
+
+# 如果是 "updateadrule" 操作，调用 updateadrule 函数
+if [ "$action" = "updateadrule" ]; then
+    # 定义函数 updateadrule
+    updateadrule() {
+        # 等待网络连接
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do
+            sleep 1
+        done
+
+        # 生成 SmartDNS 配置文件
+        cat >/opt/etc/smartdns/smartdns-new.conf <<"EOF"
+user nobody
+server-name smartdns
+log-level notice
+log-size 128K
+log-num 2
+bind [::]:60053
+audit-enable yes
+audit-size 128K
+audit-num 2
+force-qtype-SOA 65
+server-https https://223.5.5.5/dns-query
+server-https https://223.6.6.6/dns-query
+server-https https://1.12.12.12/dns-query
+server-https https://120.53.53.53/dns-query
+server-https https://doh.360.cn/dns-query
+server-https https://1.0.0.1/dns-query
+server-https https://dns64.dns.google/dns-query
+server-https https://doh-pure.onedns.net/dns-query
+conf-file /opt/etc/smartdns/anti-ad-smartdns-new.conf
+EOF
+
+        # 检测 SmartDNS 进程并更新规则
+        if pidof smartdns >/dev/null 2>&1; then
+            logger "检测到 SmartDNS 进程，开始更新广告过滤规则"
+
+            # 下载广告过滤规则
+            if /opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf \
+                -O /opt/etc/smartdns/anti-ad-smartdns-new.conf --no-check-certificate; then
+                logger "广告过滤规则下载成功"
+
+                # 暂时加载新规则验证其有效性
+                killall smartdns
+                /opt/sbin/smartdns -c "/opt/etc/smartdns/smartdns-new.conf"
+                sleep 1
+
+                # 验证加载是否成功
+                if pidof smartdns >/dev/null 2>&1; then
+                    logger "SmartDNS 已成功加载新广告过滤规则"
+                    mv /opt/etc/smartdns/anti-ad-smartdns-new.conf /opt/etc/smartdns/anti-ad-smartdns.conf
+                    # 重启 SmartDNS 服务以确保生效
+                    killall smartdns
+                    /opt/sbin/smartdns &
+                    logger "SmartDNS 服务已重新启动（加载了更新的过滤广告规则）"
+                else
+                    logger "加载新规则失败，保留旧规则文件"
+                    rm /opt/etc/smartdns/anti-ad-smartdns-new.conf
+                    # 重启 SmartDNS 服务以确保生效
+                    killall smartdns
+                    /opt/sbin/smartdns &
+                    logger "SmartDNS 服务已重新启动（加载了旧的过滤广告规则）"
+                fi
+            else
+                logger "广告过滤规则下载失败，跳过更新流程"
+                exit 1
+            fi
+        else
+            logger "未检测到 SmartDNS 进程，跳过更新流程"
+        fi
+    }
+    updateadrule
+fi
+```
 4. 点击Padavan-参数设置-脚本-应用设置。  
+```sh
+0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule
+```
 5. 将Padavan-系统管理-服务-调度任务 (Crontab)文本框里，加入0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule 并本页面的应用设置。
 点击Padavan首页的重启按钮。
 

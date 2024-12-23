@@ -6,30 +6,36 @@
 ### $2 - WAN interface name (e.g. eth3 or ppp0)
 ### $3 - WAN IPv4 address
 
+# 获取脚本的执行程序路径和参数
+script_name=$0
+script_params="$@"
+logger "在 WAN 上行/下行启动后执行:"
+logger "脚本启动: $script_name，参数: $script_params"
+
 # 获取传入的两个参数
 action=$1
 interface=$2
 
 # 判断传入的参数是否符合条件
-if [[ "$action" == "up" && "$interface" == "ppp0" ]]; then
+if [ "$action" = "up" ] && [ "$interface" = "ppp0" ]; then
     # 使用ping命令检测网络连接状态
-    ping -c 10 223.5.5.5 >/dev/null 2>&1
-
-    # 判断网络是否通畅
-    if [[ $? -ne 0 ]]; then
+    if ! ping -c 10 223.5.5.5 >/dev/null 2>&1; then
         # 如果网络不通，执行重连命令
         logger "Network is down. Restarting WAN..."
         restart_wan
     else
         logger "Network is up. No need to restart WAN."
+        
+        # 使用 until 循环等待网络恢复
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do
+            sleep 1
+        done
 
-    fi
-
-fi
-
-        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+        # 重启 DHCPD
         restart_dhcpd
-        if pidof smartdns; then
+        
+        # 如果 SmartDNS 进程存在，更新 DNS 配置
+        if pidof smartdns >/dev/null 2>&1; then
             cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf
             sed -i '/cache-size=/d' /opt/etc/dnsmasq.conf
             cat >>/opt/etc/dnsmasq.conf <<"EOF"
@@ -44,13 +50,17 @@ EOF
         else
             logger "dnsmasq以默认参数运行中"
         fi
-
     fi
+fi
 
-# 定义函数 updateadrule
+# 如果是 "updateadrule" 操作，调用 updateadrule 函数
+if [ "$action" = "updateadrule" ]; then
+    # 定义函数 updateadrule
     updateadrule() {
         # 等待网络连接
-        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do
+            sleep 1
+        done
 
         # 生成 SmartDNS 配置文件
         cat >/opt/etc/smartdns/smartdns-new.conf <<"EOF"
@@ -112,6 +122,6 @@ EOF
         else
             logger "未检测到 SmartDNS 进程，跳过更新流程"
         fi
-
     }
-updateadrule
+    updateadrule
+fi

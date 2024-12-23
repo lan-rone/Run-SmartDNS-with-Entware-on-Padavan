@@ -1,10 +1,59 @@
 #!/bin/sh
 
-# 等待网络连接
-until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+### Custom user script
+### Called after internal WAN up/down action
+### $1 - WAN action (up/down)
+### $2 - WAN interface name (e.g. eth3 or ppp0)
+### $3 - WAN IPv4 address
 
-# 生成 SmartDNS 配置文件
-cat >/opt/etc/smartdns/smartdns-new.conf <<"EOF"
+# 获取传入的两个参数
+action=$1
+interface=$2
+
+# 判断传入的参数是否符合条件
+if [[ "$action" == "up" && "$interface" == "ppp0" ]]; then
+    # 使用ping命令检测网络连接状态
+    ping -c 10 223.5.5.5 >/dev/null 2>&1
+
+    # 判断网络是否通畅
+    if [[ $? -ne 0 ]]; then
+        # 如果网络不通，执行重连命令
+        logger "Network is down. Restarting WAN..."
+        restart_wan
+    else
+        logger "Network is up. No need to restart WAN."
+
+    fi
+
+fi
+
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+        restart_dhcpd
+        if pidof smartdns; then
+            cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf
+            sed -i '/cache-size=/d' /opt/etc/dnsmasq.conf
+            cat >>/opt/etc/dnsmasq.conf <<"EOF"
+no-resolv
+no-hosts
+cache-size=0
+query-port=65353
+server=127.0.0.1#60053
+EOF
+            killall dnsmasq
+            dnsmasq -C /opt/etc/dnsmasq.conf
+        else
+            logger "dnsmasq以默认参数运行中"
+        fi
+
+    fi
+
+# 定义函数 updateadrule
+    updateadrule() {
+        # 等待网络连接
+        until ping -c 1 223.5.5.5 >/dev/null 2>&1; do sleep 1; done
+
+        # 生成 SmartDNS 配置文件
+        cat >/opt/etc/smartdns/smartdns-new.conf <<"EOF"
 user nobody
 server-name smartdns
 log-level notice
@@ -26,63 +75,43 @@ server-https https://doh-pure.onedns.net/dns-query
 conf-file /opt/etc/smartdns/anti-ad-smartdns-new.conf
 EOF
 
-# 检测 SmartDNS 进程并更新规则
-if pidof smartdns >/dev/null 2>&1; then
-    logger "检测到 SmartDNS 进程，开始更新广告过滤规则"
-
-    # 下载广告过滤规则
-    if /opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf \
-        -O /opt/etc/smartdns/anti-ad-smartdns-new.conf --no-check-certificate; then
-        logger "广告过滤规则下载成功"
-
-        # 暂时加载新规则验证其有效性
-        killall smartdns
-        /opt/sbin/smartdns -c "/opt/etc/smartdns/smartdns-new.conf"
-        sleep 1
-
-        # 验证加载是否成功
+        # 检测 SmartDNS 进程并更新规则
         if pidof smartdns >/dev/null 2>&1; then
-            logger "SmartDNS 已成功加载新广告过滤规则"
-            mv /opt/etc/smartdns/anti-ad-smartdns-new.conf /opt/etc/smartdns/anti-ad-smartdns.conf
-            # 重启 SmartDNS 服务以确保生效
-            killall smartdns
-            /opt/sbin/smartdns &
-            logger "SmartDNS 服务已重新启动（加载了更新的过滤广告规则）"
+            logger "检测到 SmartDNS 进程，开始更新广告过滤规则"
+
+            # 下载广告过滤规则
+            if /opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf \
+                -O /opt/etc/smartdns/anti-ad-smartdns-new.conf --no-check-certificate; then
+                logger "广告过滤规则下载成功"
+
+                # 暂时加载新规则验证其有效性
+                killall smartdns
+                /opt/sbin/smartdns -c "/opt/etc/smartdns/smartdns-new.conf"
+                sleep 1
+
+                # 验证加载是否成功
+                if pidof smartdns >/dev/null 2>&1; then
+                    logger "SmartDNS 已成功加载新广告过滤规则"
+                    mv /opt/etc/smartdns/anti-ad-smartdns-new.conf /opt/etc/smartdns/anti-ad-smartdns.conf
+                    # 重启 SmartDNS 服务以确保生效
+                    killall smartdns
+                    /opt/sbin/smartdns &
+                    logger "SmartDNS 服务已重新启动（加载了更新的过滤广告规则）"
+                else
+                    logger "加载新规则失败，保留旧规则文件"
+                    rm /opt/etc/smartdns/anti-ad-smartdns-new.conf
+                    # 重启 SmartDNS 服务以确保生效
+                    killall smartdns
+                    /opt/sbin/smartdns &
+                    logger "SmartDNS 服务已重新启动（加载了旧的过滤广告规则）"
+                fi
+            else
+                logger "广告过滤规则下载失败，跳过更新流程"
+                exit 1
+            fi
         else
-            logger "加载新规则失败，保留旧规则文件"
-            rm /opt/etc/smartdns/anti-ad-smartdns-new.conf
-            # 重启 SmartDNS 服务以确保生效
-            killall smartdns
-            /opt/sbin/smartdns &
-            logger "SmartDNS 服务已重新启动（加载了旧的过滤广告规则）"
+            logger "未检测到 SmartDNS 进程，跳过更新流程"
         fi
-    else
-        logger "广告过滤规则下载失败，跳过更新流程"
-        exit 1
-    fi
-else
-    logger "未检测到 SmartDNS 进程，跳过更新流程"
-fi
 
-
-# 重启 DHCP 服务
-restart_dhcpd
-sleep 2
-
-# 配置 dnsmasq
-if pidof smartdns >/dev/null 2>&1; then
-    cp /etc/dnsmasq.conf /opt/etc/dnsmasq.conf
-    sed -i '/cache-size=/d' /opt/etc/dnsmasq.conf
-    cat >>/opt/etc/dnsmasq.conf <<"EOF"
-no-resolv
-no-hosts
-cache-size=0
-query-port=65353
-server=127.0.0.1#60053
-EOF
-    killall dnsmasq
-    dnsmasq -C /opt/etc/dnsmasq.conf
-    logger "dnsmasq 已使用 SmartDNS 完成配置"
-else
-    logger "SmartDNS 进程异常，dnsmasq 将以默认参数运行"
-fi
+    }
+updateadrule

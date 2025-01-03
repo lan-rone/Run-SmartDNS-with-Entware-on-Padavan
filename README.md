@@ -251,11 +251,16 @@ fi
 ```
 4. 点击Padavan-参数设置-脚本-应用设置。  
 
-5. 将Padavan-系统管理-服务-调度任务 (Crontab)文本框里，加入0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule 并本页面的应用设置。  
+5. 将Padavan-系统管理-服务-调度任务 (Crontab)文本框里，填入0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule 并应用设置。  
 ```sh
 0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule
 ```
-6. 点击Padavan首页的重启按钮。
+
+6. 保存设置（Padavan-系统管理-配置管理-保存内部存储到闪存:提交）。
+
+7. 点击Padavan首页的重启按钮。
 
 ## 删除方法：  
-1. 到上述文本框里手动清除相关shell脚本，而后重启Padavan。  
+1. 到上述文本框里手动清除相关shell脚本并应用设置。
+2. 保存设置（Padavan-系统管理-配置管理-保存内部存储到闪存:提交）。
+3. 点击Padavan首页的重启按钮。  

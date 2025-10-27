@@ -23,6 +23,7 @@ if [ "$action" = "up" ] && [ "$interface" = "ppp0" ]; then
         # 如果网络不通，执行重连命令
         logger "Network is down. Restarting WAN..."
         restart_wan
+        exit
     else
         logger "Network is up. No need to restart WAN."
         

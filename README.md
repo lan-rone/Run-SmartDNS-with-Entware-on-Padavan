@@ -95,7 +95,7 @@ conf-file /opt/etc/smartdns/anti-ad-smartdns.conf
 EOF
 ###安装wget-ssl,下载anti-ad规则
 /opt/bin/opkg install wget-ssl ca-certificates
-/opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf -O /opt/etc/smartdns/anti-ad-smartdns.conf --no-check-certificate
+/opt/libexec/wget-ssl https://hub.gitmirror.com/https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf -O /opt/etc/smartdns/anti-ad-smartdns.conf --no-check-certificate
 killall smartdns
 /opt/sbin/smartdns &
 pidof smartdns && logger "smartdns已加载过滤广告规则"
@@ -213,7 +213,7 @@ EOF
             logger "检测到 SmartDNS 进程，开始更新广告过滤规则"
 
             # 下载广告过滤规则
-            if /opt/libexec/wget-ssl https://raw.githubusercontents.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf \
+            if /opt/libexec/wget-ssl https://hub.gitmirror.com/https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf \
                 -O /opt/etc/smartdns/anti-ad-smartdns-new.conf --no-check-certificate; then
                 logger "广告过滤规则下载成功"
 

@@ -97,7 +97,7 @@ EOF
 /opt/bin/opkg install wget-ssl ca-certificates
 /opt/libexec/wget-ssl https://hub.gitmirror.com/https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-smartdns.conf -O /opt/etc/smartdns/anti-ad-smartdns.conf --no-check-certificate
 killall smartdns
-/opt/sbin/smartdns &
+/opt/sbin/smartdns -c /opt/etc/smartdns/smartdns.conf &
 pidof smartdns && logger "smartdns已加载过滤广告规则"
 
 ###如果smartdns启动失败,dnsmasq继续以默认配置运行
@@ -146,6 +146,7 @@ if [ "$action" = "up" ] && [ "$interface" = "ppp0" ]; then
         # 如果网络不通，执行重连命令
         logger "Network is down. Restarting WAN..."
         restart_wan
+        exit
     else
         logger "Network is up. No need to restart WAN."
         

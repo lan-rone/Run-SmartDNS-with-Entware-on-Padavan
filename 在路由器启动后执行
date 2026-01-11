@@ -65,19 +65,36 @@ install_env() {
 user nobody
 server-name smartdns
 restart-on-crash yes
-log-level notice
-log-size 128K
+# log-level notice
+# log-size 128K
+# audit-enable yes
 bind [::]:60053
 force-qtype-SOA 65
+# 如果有IPv6, 将下一行注释
+force-AAAA-SOA yes
+prefetch-domain yes
+speed-check-mode ping,tcp:80
 
 # 上游服务器
-server-https https://223.5.5.5/dns-query
+# 本地联通 DNS
+server 202.106.195.68
+server 202.106.46.151
+# 阿里 DNS
+server 223.5.5.5
+# 腾讯 DNS
+server 119.29.29.29
+# 360 DNS
+server 101.226.4.6
+
+# DoH/DoT
+# 阿里 DoH
 server-https https://223.6.6.6/dns-query
+# 腾讯 DoH (只保留一个 IP 即可，不需要写四个)
 server-https https://1.12.12.12/dns-query
-server-https https://120.53.53.53/dns-query
-server-https https://doh.360.cn/dns-query
+# 360 DoH (IP格式)
+server-https https://101.226.4.6/dns-query
+# Cloudflare (国内通常较慢，作为最后的保底)
 server-https https://1.0.0.1/dns-query
-server-https https://doh-pure.onedns.net/dns-query
 
 # 引用广告规则文件
 conf-file $AD_RULE_FILE
@@ -145,14 +162,14 @@ link_dnsmasq() {
   sed -i '/no-resolv/d' "$DNSMASQ_CONF_OPT"
   sed -i '/no-hosts/d' "$DNSMASQ_CONF_OPT"
   sed -i '/server=/d' "$DNSMASQ_CONF_OPT"
-  sed -i '/query-port=/d' "$DNSMASQ_CONF_OPT"
+  # sed -i '/query-port=/d' "$DNSMASQ_CONF_OPT"
 
   # 写入新参数
   cat >>"$DNSMASQ_CONF_OPT" <<EOF
 no-resolv
 no-hosts
 cache-size=0
-query-port=65353
+# query-port=65353
 server=127.0.0.1#60053
 EOF
 

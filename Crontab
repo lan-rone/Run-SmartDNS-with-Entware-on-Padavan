@@ -1,0 +1,7 @@
+#!/bin/sh
+
+### Custom user script
+### Crontab
+
+# 每天凌晨3点更新规则（SmartDNS）
+0 3 * * * source "/etc/storage/post_wan_script.sh" updateadrule

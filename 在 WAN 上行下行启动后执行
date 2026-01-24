@@ -15,10 +15,10 @@ script_params="$@"
 logger "SmartDNS WAN 脚本启动: $script_name，参数: $script_params"
 
 # 加载函数库
-if [ -f /tmp/smartdns_lib.sh ]; then
+if [ -f /tmp/.smartdns_install_complete ]; then
     source /tmp/smartdns_lib.sh
 else
-    logger "SmartDNS WAN: 未找到函数库，可能启动脚本尚未执行完毕"
+    logger "SmartDNS WAN: 启动脚本未完成"
     exit 1
 fi
 

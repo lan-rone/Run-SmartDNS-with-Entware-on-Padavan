@@ -10,7 +10,7 @@ logger "脚本启动: 开始部署 SmartDNS"
 # 第一步：生成公共函数库 (存在内存 /tmp 中，所有脚本共用)
 # =========================================================
 
-# cat > /tmp/smartdns_lib.sh <<'LIBEOF' # 【重要！！！】使用时请将此行取消注释
+# cat >/tmp/smartdns_lib.sh <<'LIBEOF' # 【重要！！！】使用时请将此行取消注释
 #!/bin/sh
 
 # 定义变量
@@ -19,6 +19,7 @@ SMARTDNS_CONF="/opt/etc/smartdns/smartdns.conf"
 AD_RULE_FILE="/opt/etc/smartdns/anti-ad-smartdns.conf"
 DNSMASQ_CONF_SRC="/etc/dnsmasq.conf"
 DNSMASQ_CONF_OPT="/opt/etc/dnsmasq.conf"
+INSTALL_FLAG="/tmp/.smartdns_install_complete"
 
 # --- 函数：检查网络 ---
 check_network() {
@@ -29,35 +30,59 @@ check_network() {
   return 1
 }
 
+# --- 函数：检查是否已安装 ---
+is_installed() {
+  [ -f "$INSTALL_FLAG" ] && return 0
+  return 1
+}
+
+# --- 函数：设置安装完成标志 ---
+set_install_complete() {
+  echo "timestamp=$(date +%s)" >> "$INSTALL_FLAG"
+  echo "smartdns_pid=$(pidof smartdns 2>/dev/null || echo 'not_running')" >> "$INSTALL_FLAG"
+  logger "SmartDNS Lib: 安装完成标志已设置"
+}
+
 # --- 函数：安装环境 (内存模式) ---
 install_env() {
   logger "SmartDNS Lib: 正在安装 Entware 和 SmartDNS..."
-  # 挂载 tmpfs (48M)
-  mount -t tmpfs tmpfs /opt -o size=48M
+  # 挂载 tmpfs (128M)
+  mount -t tmpfs tmpfs /opt -o size=128M
+  [ $? -ne 0 ] && logger "SmartDNS Lib: 挂载失败" && return 1
 
   # 创建目录结构
   for folder in bin etc lib/opkg tmp var/lock var/run etc/smartdns; do
     mkdir -p /opt/$folder
   done
-
-  # 复制系统文件修复用户环境
   chmod 777 /opt/tmp
+
+  # 复制系统文件
   for file in passwd group shells shadow TZ; do
     [ -f /etc/$file ] && cp /etc/$file /opt/etc/$file
   done
 
   # 使用镜像安装 opkg 和 smartdns
-  wget http://mirror.nju.edu.cn/entware/mipselsf-k3.4/installer/opkg -O /opt/bin/opkg
-  chmod 755 /opt/bin/opkg
-  wget http://mirror.nju.edu.cn/entware/mipselsf-k3.4/installer/opkg.conf -O /opt/etc/opkg.conf
-  sed -i 's|bin.entware.net|mirror.nju.edu.cn/entware|g' /opt/etc/opkg.conf
+  if [ ! -f /opt/bin/opkg ]; then
+    wget http://mirror.nju.edu.cn/entware/mipselsf-k3.4/installer/opkg -O /opt/bin/opkg
+    if [ $? -ne 0 ]; then
+      logger "SmartDNS Lib: opkg 下载失败"
+      return 1
+    fi
+    chmod 755 /opt/bin/opkg
+
+    wget http://mirror.nju.edu.cn/entware/mipselsf-k3.4/installer/opkg.conf -O /opt/etc/opkg.conf
+    sed -i 's|bin.entware.net|mirror.nju.edu.cn/entware|g' /opt/etc/opkg.conf
+  fi
   logger "SmartDNS Lib: opkg 安装完成"
 
-  /opt/bin/opkg update
-  logger "SmartDNS Lib: Entware 环境安装完成"
-
-  # 安装 SmartDNS 及其依赖
-  /opt/bin/opkg install smartdns wget-ssl ca-certificates
+  # 更新并安装包
+  /opt/bin/opkg update >/dev/null 2>&1
+  /opt/bin/opkg install smartdns wget-ssl ca-certificates >/dev/null 2>&1
+  
+  if [ ! -f "$SMARTDNS_BIN" ]; then
+    logger "SmartDNS Lib: SmartDNS 安装失败"
+    return 1
+  fi
   logger "SmartDNS Lib: SmartDNS 安装完成"
 
   # 写入 SmartDNS 主配置
@@ -72,29 +97,36 @@ bind [::]:60053
 force-qtype-SOA 65
 # 如果有IPv6, 将下一行注释
 force-AAAA-SOA yes
+serve-expired no
 prefetch-domain yes
-speed-check-mode ping,tcp:80
 
 # 上游服务器
 # 本地联通 DNS
 server 202.106.195.68
-server 202.106.46.151
 # 阿里 DNS
 server 223.5.5.5
 # 腾讯 DNS
 server 119.29.29.29
-# 360 DNS
+# Cloudflare
+server 1.1.1.1
+# 百度
+server 180.76.76.76
+# 114
+server 114.114.114.114
+# OneDNS
+server 117.50.10.10
+# 三大运营商（电信、联通、移动顺序）
 server 101.226.4.6
+server 123.125.81.6
+server 101.226.4.6
+# Google
+server 8.8.8.8
 
 # DoH/DoT
 # 阿里 DoH
 server-https https://223.6.6.6/dns-query
-# 腾讯 DoH (只保留一个 IP 即可，不需要写四个)
-server-https https://1.12.12.12/dns-query
-# 360 DoH (IP格式)
-server-https https://101.226.4.6/dns-query
-# Cloudflare (国内通常较慢，作为最后的保底)
-server-https https://1.0.0.1/dns-query
+# 腾讯 DoH
+server-https https://doh.pub/dns-query
 
 # 引用广告规则文件
 conf-file $AD_RULE_FILE
@@ -162,14 +194,14 @@ link_dnsmasq() {
   sed -i '/no-resolv/d' "$DNSMASQ_CONF_OPT"
   sed -i '/no-hosts/d' "$DNSMASQ_CONF_OPT"
   sed -i '/server=/d' "$DNSMASQ_CONF_OPT"
-  # sed -i '/query-port=/d' "$DNSMASQ_CONF_OPT"
+  sed -i '/query-port=/d' "$DNSMASQ_CONF_OPT"
 
   # 写入新参数
   cat >>"$DNSMASQ_CONF_OPT" <<EOF
 no-resolv
 no-hosts
 cache-size=0
-# query-port=65353
+query-port=65353
 server=127.0.0.1#60053
 EOF
 
@@ -177,6 +209,34 @@ EOF
   killall dnsmasq
   dnsmasq -C "$DNSMASQ_CONF_OPT" &
   logger "SmartDNS Lib: DNSMasq 已重启并接管。"
+}
+
+# --- 函数：完整安装流程 ---
+full_installation() {
+  logger "SmartDNS Lib: 开始完整安装流程"
+
+  # 1. 等待网络
+  local wait_count=0
+  while ! check_network; do
+    sleep 2
+    wait_count=$((wait_count+1))
+    [ $wait_count -gt 30 ] && logger "SmartDNS Lib: 网络等待超时" && return 1
+  done
+
+  # 2. 安装环境
+  install_env || return 1
+
+  # 3. 下载规则
+  update_ad_rule
+
+  # 4. 接管 DNSMasq
+  link_dnsmasq
+
+  # 5. 设置完成标志
+  set_install_complete
+
+  logger "SmartDNS Lib: 完整安装完成"
+  return 0
 }
 
 LIBEOF
@@ -188,23 +248,16 @@ LIBEOF
 chmod +x /tmp/smartdns_lib.sh
 source /tmp/smartdns_lib.sh
 
-# 2. 等待网络连接
-until check_network; do sleep 2; done
-logger "SmartDNS Startup: Internet 已连接"
+# 2. 检查是否已安装
+if is_installed; then
+  logger "SmartDNS Startup: 检测到已安装，跳过安装流程"
 
-# 3. 执行安装
-install_env
-
-# 4. 下载规则 (首次)
-update_ad_rule
-
-# 5. 启动 SmartDNS (update_ad_rule 里其实已经启动了一次，这里为了双保险确保进程在)
-if ! pidof smartdns >/dev/null; then
-  $SMARTDNS_BIN -c "$SMARTDNS_CONF" -p /opt/var/run/smartdns.pid &
+  # 只确保服务在运行
+  start_smartdns
+  exit 0
 fi
 
-# 6. 接管 DNSMasq
-link_dnsmasq
-
-logger "SmartDNS Startup: SmartDNS脚本执行完毕"
+# 3. 执行完整安装（后台执行，不阻塞启动）
+logger "SmartDNS Startup: 开始后台安装"
+(sleep 60 && full_installation) &
 ### --- Config SmartDNS End ---
